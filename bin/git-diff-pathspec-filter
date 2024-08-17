@@ -1,0 +1,227 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Devel::StrictMode;
+use Term::ANSIColor qw(colored);
+use Pod::Usage qw(pod2usage);
+use Getopt::Long::Descriptive qw(describe_options);
+
+sub match_pathspec {
+    my ($filename, $pathspec) = @_;
+    my $negated = $pathspec =~ s/^:([!^])//;
+    my $pattern = quotemeta($pathspec);
+
+    # Handle ** pattern (match across directories)
+    $pattern =~ s/\\\*\\\*/.*?/g;
+
+    # Handle * and ? patterns
+    $pattern =~ s/\\\*/[^\/]*/g;
+    $pattern =~ s/\\\?/[^\/]/g;
+
+    my $match = $filename =~ /^$pattern$/;
+
+    if( $negated && $match ) {
+        return 'exclude';
+    } elsif( $match ) {
+        return 'include';
+    }
+    return 'nomatch'
+}
+
+# Define the options
+my ($opt, $usage) = describe_options(
+  "%c %o [--] path-specs...",
+  [],
+  [ 'help|h',       "print usage message and exit", { shortcircuit => 1 } ],
+);
+
+# Remove a leading option separator ('--') from @ARGV if it exists
+shift @ARGV if @ARGV && $ARGV[0] eq '--';
+
+my $print_current;
+
+my @header_lines = ();
+my $in_header = 0;
+my @diff_files = ();
+my $do_header_check = 0;
+
+# ANSI color code pattern
+my $ansi_pattern = qr/\e\[[0-9;]*m/;
+
+if( $opt->help ) {
+    pod2usage({
+        -verbose => 99,
+        -output => \*STDOUT,
+        -exitval => 0 });
+}
+
+push @ARGV, '**' if !@ARGV;
+
+while (my $line = <STDIN>) {
+    # Remove ANSI color codes for matching
+    my $clean_line = $line;
+    $clean_line =~ s/$ansi_pattern//g;
+
+    if ($clean_line =~ m{^diff --git a/(.+?) b/(.+?)$}) {
+        push @header_lines, $line;
+        $in_header = 1;
+        @diff_files = ($1, $2);
+        $do_header_check = 0;
+        if( STRICT ) {
+            print STDERR "Starting with diff block $header_lines[0]";
+        }
+    } elsif($in_header) {
+        push @header_lines, $line;
+        # Files for
+        #
+        #   --- ...
+        #   +++ ...
+        #
+        # can be:
+        #
+        #   a/...
+        #   b/...
+        #   /dev/null
+        if($clean_line =~ /^\Q---\E (.*)$/) {
+            $diff_files[0] = $1;
+        } elsif($clean_line =~ /^\Q+++\E (.*)$/) {
+            $diff_files[1] = $1;
+            $do_header_check = 1;
+        } elsif($clean_line =~ /^Binary files (\S*) and (\S*)/) {
+            @diff_files = ($1, $2);
+            $do_header_check = 1;
+        }
+
+        if( $do_header_check ) {
+            $print_current = 0;
+
+            for my $pathspec (@ARGV) {
+                my $m_a = match_pathspec($diff_files[0], $pathspec);
+                my $m_b = match_pathspec($diff_files[1], $pathspec);
+                if( STRICT ) {
+                    print STDERR "Checking against $pathspec\n";
+                    print STDERR " $diff_files[0] : $m_a\n";
+                    print STDERR " $diff_files[1] : $m_b\n";
+                }
+                if ($m_a eq 'exclude' || $m_b eq 'exclude') {
+                    $print_current = 0;
+                    last;
+                } elsif($m_a eq 'include' || $m_b eq 'include' ) {
+                    $print_current = 1;
+                }
+            }
+
+            if( $print_current ) {
+                print @header_lines;
+            }
+            if( STRICT ) {
+                if( $print_current ) {
+                    print STDERR "@{[ colored(['green'], 'Keeping') ]} $header_lines[0]";
+                } else {
+                    print STDERR "@{[ colored(['red'], 'Skipping') ]} $header_lines[0]";
+                }
+            }
+            @header_lines = ();
+            $in_header = 0;
+        }
+    } elsif($print_current) {
+        print $line;
+    }
+}
+
+__END__
+
+=head1 NAME
+
+git-diff-pathspec-filter - Filter git diff output using pathspec-like patterns
+
+=head1 SYNOPSIS
+
+    git diff --no-index [git-diff-options] | git-diff-pathspec-filter [pathspec ...]
+
+=head1 DESCRIPTION
+
+This script filters the output of C<git diff --no-index> using
+L<pathspec-like|https://git-scm.com/docs/gitglossary#Documentation/gitglossary.txt-aiddefpathspecapathspec>
+patterns. This is necessary because a diff between two paths does not allow for
+using pathspecs.
+
+It only deals with C<diff> chunks at the header level so does not interfere with
+various kinds of C<diff> output such as character-level diffs produced by
+L<git-diff>'s C<--word-diff> option as opposed to the default unified diff
+output.
+
+The script reads git diff output from C<STDIN> and applies the given pathspecs
+to determine which diff blocks to include in the output.
+
+=head1 OPTIONS
+
+Pathspecs are provided as command-line arguments. Each pathspec can be:
+
+=over 4
+
+=item * A simple file or directory name (e.g., 'filename.txt', 'dir/')
+
+=item * A pattern using wildcards (e.g., '*.js', 'test/**')
+
+=item * An exclude pattern, prefixed with ':!' or ':^' (e.g., ':!node_modules/', ':^*.log')
+
+=back
+
+=head1 EXAMPLES
+
+Filter to show only JavaScript files:
+
+    git diff --no-index [git-diff-options] \
+       | git-diff-pathspec-filter '**/*.js'
+
+Exclude 'node_modules' directory and show all other changes:
+
+    git diff --no-index [git-diff-options] \
+       | git-diff-pathspec-filter ':!node_modules/**' '**'
+
+Exclude multiple directories and include the rest:
+
+    git diff --no-index [git-diff-options] \
+       | git-diff-pathspec-filter ':!node_modules/**' ':!dist/**' ':!*.log' '**'
+
+Include only specific directories after excluding others:
+
+    git diff --no-index [git-diff-options] \
+       | git-diff-pathspec-filter ':!node_modules/**' ':!dist/**' 'src/**' 'tests/**'
+
+=head1 NOTES
+
+=over 4
+
+=item *
+
+The order of pathspecs matters. Exclude patterns (C<:!> or C<:^>) override
+previous include patterns.
+
+=item *
+
+If no pathspecs are provided, all diff output is printed.
+
+=item *
+
+To ensure that the rest of the paths are output after the exclusions,
+be sure to append C<**> to the list of pathspecs.
+
+=item *
+
+The script preserves ANSI color codes in the output if present in the input.
+
+=back
+
+=head1 AUTHOR
+
+Zaki Mughal
+
+=head1 LICENSE
+
+MIT
+
+=cut
