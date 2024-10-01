@@ -273,6 +273,23 @@ sub _iter_process_ref_diff($iter_top_structure) {
 	} $iter_top_structure;
 }
 
+sub _ws_split { split /\s+/, shift }
+# character tokenize
+sub _tokenize_char { map { split // } _ws_split(@_); }
+# word tokenize
+sub _tokenize_word { map { split /[\w:]+\K/ } _ws_split(@_); }
+# some weird word+op tokenize
+sub _tokenize_word_op {
+	map { split /(?=[^\w:=>-]+)/ } _ws_split(@_);
+}
+sub _tokenize_st {
+	state $tokenizer = String::Tokenizer->new();
+	$tokenizer->tokenize( trim(shift), '?:()+*-=<>' , 0 );
+	#use DDP; print np $tokenizer->getTokens;#DEBUG
+	$tokenizer->getTokens;
+}
+
+sub tokenize { goto &_tokenize_st; }
 
 
 sub _iter_process_moved_diff($iter_ref_diff) {
@@ -288,24 +305,11 @@ sub _iter_process_moved_diff($iter_ref_diff) {
 					,
 				List::Util::zip( $_->{items}, [ 0..$_->{items}->$#* ] ) ;
 			my %texts;
-			my $tokenizer = String::Tokenizer->new();
 			for my $subtype (keys %parts) {
 				$texts{$subtype}->@* = map {
 					[
 						$_->[0]{text}->str,
-						[
-							#do {
-								##map { split /(?=[^\w:=>-]+)/ } # some weird word+op tokenize
-								##map { split /[\w:]+\K/ } # word tokenize
-								#map { split // } # character tokenize
-								#split /\s+/, $_->{text}->substr(1)->str
-							#},
-							do {
-								$tokenizer->tokenize( trim($_->[0]{text}->substr(1)->str), '?:()+*-=<>' , 0 );
-								#use DDP; print np $tokenizer->getTokens;#DEBUG
-								$tokenizer->getTokens;
-							},
-						],
+						[ tokenize($_->[0]{text}->substr(1)->str) ],
 						$_,
 					]
 				} $parts{$subtype}->@*
