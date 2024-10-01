@@ -356,9 +356,7 @@ sub _iter_process_moved_diff($iter_ref_diff) {
 			}
 			#use DDP; print np(%parts, colored => 1), "\n";#DEBUG
 			#use DDP; print np(%texts, colored => 1, seen_override => 1 ), "\n";#DEBUG
-			#use DDP; print np(@compared, colored => 1, seen_override => 1 ), "\n";#DEBUG
-			my %part_compared = partition_by { 0+!!$_->{has_zero_dist} } @compared;
-			use DDP; print np(%part_compared, colored => 1, seen_override => 1 ), "\n";#DEBUG
+			use DDP; print np(@compared, colored => 1, seen_override => 1 ), "\n";#DEBUG
 
 			return $_;
 		} else {
