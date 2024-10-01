@@ -281,18 +281,18 @@ sub _iter_process_moved_diff($iter_ref_diff) {
 	return imap {
 		if( $_->{type} eq 'diff' ) {
 			my %parts =
-				partition_by { $_->{info}{diff}{subtype} }
+				partition_by { $_->[0]{info}{diff}{subtype} }
 				grep
-					   $_->{info}{diff}{type} eq 'body'
-					&& $body_subtype_analyze->has($_->{info}{diff}{subtype})
+					   $_->[0]{info}{diff}{type} eq 'body'
+					&& $body_subtype_analyze->has($_->[0]{info}{diff}{subtype})
 					,
-				$_->{items}->@*;
+				List::Util::zip( $_->{items}, [ 0..$_->{items}->$#* ] ) ;
 			my %texts;
 			my $tokenizer = String::Tokenizer->new();
 			for my $subtype (keys %parts) {
 				$texts{$subtype}->@* = map {
 					[
-						$_->{text}->str,
+						$_->[0]{text}->str,
 						[
 							#do {
 								##map { split /(?=[^\w:=>-]+)/ } # some weird word+op tokenize
@@ -301,7 +301,7 @@ sub _iter_process_moved_diff($iter_ref_diff) {
 								#split /\s+/, $_->{text}->substr(1)->str
 							#},
 							do {
-								$tokenizer->tokenize( trim($_->{text}->substr(1)->str), '?:()+*-=<>' , 0 );
+								$tokenizer->tokenize( trim($_->[0]{text}->substr(1)->str), '?:()+*-=<>' , 0 );
 								#use DDP; print np $tokenizer->getTokens;#DEBUG
 								$tokenizer->getTokens;
 							},
