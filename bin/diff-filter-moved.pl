@@ -23,19 +23,33 @@ my $iter = iter_input(\*STDIN);
 
 sub print_group($group) {
 	my $max_width_items = max map $_->{text}->length, $group->{items}->@*;
+	my $print_prefix = 0;
+	my $print_suffix = 0;
 	(
 		String::Tagged::Terminal->new()
 		. String::Tagged->join("",
-			map { String::Tagged->from_sprintf("%-30s:%-@{[ 1+$max_width_items ]}s:%s\n",
-					join("::", grep defined,
-				$group->{type},
+			map { String::Tagged->from_sprintf(
+				"@{[ ('%-30s:')x!! $print_prefix ]}"
+				."%-@{[ 1+$max_width_items ]}s"
+				."@{[ (':%s')x!!$print_suffix ]}"
+				."\n",
+				( $print_prefix
+				? join("::", grep defined,
+					$group->{type},
 					$_->{line_number},
-					$_->{info}{diff}{type}, $_->{info}{diff}{subtype}),
+					$_->{info}{diff}{type},
+					$_->{info}{diff}{subtype})
+				: ()
+				),
 				$_->{text},
-				do {""},
-				#do { use Data::Dumper::Concise (); Data::Dumper::Concise::Dumper($_) },
-				#do { use Data::Dumper::Compact qw(ddc); ddc($_, { max_width => $max_width_items }) },
-				#do { use DDP; np($_, colored=>1, multiline=>0) },
+				( $print_suffix
+				?
+					do {""}
+					#do { use Data::Dumper::Concise (); Data::Dumper::Concise::Dumper($_) }
+					#do { use Data::Dumper::Compact qw(ddc); ddc($_, { max_width => $max_width_items }) }
+					#do { use DDP; np($_, colored=>1, multiline=>0) }
+				: ()
+				)
 			) }
 				$group->{items}->@*
 		)
