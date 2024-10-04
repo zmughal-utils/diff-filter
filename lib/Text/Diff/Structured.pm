@@ -131,7 +131,7 @@ sub _iter_classify($iter_enumerate_hash) {
 					diff => {
 						type      => 'file-header',
 						subtype   => 'to',
-						from_file => $1,
+						to_file => $1,
 					}
 				};
 
