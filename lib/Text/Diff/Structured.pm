@@ -320,7 +320,7 @@ sub _iter_process_moved_diff($iter_ref_diff) {
 				my @matches =
 					nsort_by { $_->[1] }
 					grep {
-						$_->[1] <= int( ($ENV{T} // 0.1) * max(0+$removed_item->[1]->@*, 0+$_->[0]->@*))
+						$_->[1] <= int( ($ENV{T} // 0.3) * max(0+$removed_item->[1]->@*, 0+$_->[0]->@*))
 						#&&
 						#$_->[2][-1][0] == $_->[2][-1][1]
 						;
