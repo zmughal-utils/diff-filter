@@ -18,6 +18,7 @@ use List::Util qw(reduce any min max head);
 use List::UtilsBy qw(partition_by min_by nsort_by);
 use List::SomeUtils qw(before);
 use String::Tagged::Terminal;
+use Convert::Color;
 use Term::ANSIColor qw(colorstrip);
 use Set::Tiny qw(set);
 use Text::Tabs qw(expand);
@@ -25,6 +26,7 @@ use Text::ANSI::Tabs qw(ansi_expand);
 use String::Util qw(trim);
 use Text::Levenshtein::BV;
 use String::Tokenizer;
+use Text::WordDiff;
 
 sub iter_input($input) {
 	return reduce { $b->($a) } (
@@ -335,28 +337,142 @@ sub _iter_process_moved_diff($iter_ref_diff) {
 						]
 					}
 					grep { $_->[1]->@* } $texts{added}->@*;
+				# NOTE @compared is already sorted by the from.line_number and to.line_number
 				push @compared,
 					map {
-						my @zero_dist = before { $_->[1] != 0 } $_->{to}->@*;
+						my $from_multi_to = $_;
+						map [
+							$from_multi_to->{from}{item},
+							$_->{item},
+							$_->{match_info},
+						], $from_multi_to->{to}->@*
+					}
+					map {
+						my @zero_dist = before { $_->{match_info}[0] != 0 } $_->{to}->@*;
 						$_->{to}->@* = @zero_dist ? @zero_dist : head(2, $_->{to}->@*);
 						$_->{has_zero_dist} = !!@zero_dist;
 						$_;
 					}
 					map { $_->{to}->@* ? $_ : () }
 					+{
-						from => $removed_item->[0],
+						from => { item => $removed_item },
 						to   => [ map {
 								my @m = @$_;
-								[
-									$m[0][0],
-									@m[1..$#m]
-								]
+								+{
+									item       => $m[0],
+									match_info => [ @m[1..$#m] ],
+								}
 							} @matches ],
 					}
 			}
+
+			my @comments =
+				nsort_by { $_->[0] } # by line number
+				map {
+					my $match = $_;
+					my $from_item = $match->[0][2][0];
+					my $to_item   = $match->[1][2][0];
+
+					my $from_file = $from_item->{info}{diff}{ref}{'file-header'}{from}{info}{diff}{from_file};
+					my $to_file   =   $to_item->{info}{diff}{ref}{'file-header'}{to}{info}{diff}{to_file};
+
+					my $from_tokens = $match->[0][1];
+					my $to_tokens   = $match->[1][1];
+
+					my $from_idx = $match->[0][2][1];
+					my $to_idx   = $match->[1][2][1];
+
+					my $match_info = $match->[2];
+					my $distance = $match_info->[0];
+
+					#my $word_diff = Text::WordDiff::word_diff(
+					#  [ List::Util::mesh( $from_tokens, [(' ')x$from_tokens->$#*] ) ],
+					#  [ List::Util::mesh( $to_tokens, [(' ')x$to_tokens->$#*] ) ],
+					#);
+					my $word_diff = Text::WordDiff::word_diff(
+						\ trim($from_item->{text}->substr(1)->str),
+						\ trim($to_item->{text}->substr(1)->str),
+					);
+
+					my $cmt_from_prefix = String::Tagged::Terminal->new_tagged("#\x{2192}", fgindex => 3 );
+					my $cmt_to_prefix   = String::Tagged::Terminal->new_tagged("#\x{2190}", fgindex => 3 );
+					my $unchanged_text = String::Tagged::Terminal->new_from_formatting(
+						String::Tagged->new_tagged( "(unchanged)", fg => Convert::Color->new('x11:sky blue') )
+					);
+
+					my $word_diff_tagged = String::Tagged::Terminal->parse_terminal($word_diff);
+					my @word_diff_format = (bgindex =>  0, fgindex => 8, bold  => 1 );
+
+					{
+						my $pos = 0;
+						while($pos < $word_diff_tagged->length) {
+							if(my $e = $word_diff_tagged->get_tag_extent($pos, 'fgindex')) {
+								$pos = $e->end + 1;
+							} else {
+								my $e = $word_diff_tagged->get_tag_missing_extent($pos, 'fgindex' );
+								$word_diff_tagged->apply_tag( $e, @word_diff_format );
+								$pos = $e->end + 1;
+							}
+						}
+					}
+
+					my $get_line = sub ($cmt_prefix) {
+						my $line = String::Tagged->join('',
+							String::Tagged::Terminal->new,
+							$distance != 0
+								? (":\n",
+										$cmt_prefix,
+										String::Tagged::Terminal->new_tagged("\t", @word_diff_format),
+										$word_diff_tagged)
+								: (': ', $unchanged_text)
+						);
+					};
+
+					my $cmt_from = String::Tagged::Terminal->new_tagged(
+							$cmt_from_prefix, fgindex => 3
+						)
+						->append_tagged( " $to_file", fgindex => 8+1, bgindex => 8+0, bold => 1 )
+						->concat( $get_line->($cmt_from_prefix) );
+					my $cmt_to   = String::Tagged::Terminal->new_tagged(
+							$cmt_to_prefix, fgindex => 3
+						)
+						->append_tagged( " $from_file", fgindex => 8+2, bgindex => 8+0, bold => 1 )
+						->concat( $get_line->($cmt_to_prefix) );
+
+					map {
+						my $cmt_idx_tup = $_;
+
+						my $comment_idx  = $_->[0];
+						my $comment_text = $_->[1];
+
+						my $comment_item = {
+								text        => $comment_text,
+								info        => {
+										type => 'diff',
+										diff => {
+												type    => 'comment',
+												subtype => 'moved',
+										},
+								},
+						};
+						[ $comment_idx, $comment_item ];
+					} (
+						[ $from_idx, $cmt_from ],
+						[ $to_idx  , $cmt_to ],
+					)
+				} @compared;
+
+			#use DDP; print np(@comments, colored => 1, seen_override => 1 ), "\n";#DEBUG
+			my $comment_offset = 0;
+			for my $comment (@comments) {
+				my ($comment_idx, $comment_item) = @$comment;
+				splice(@{$_->{items}}, $comment_idx + $comment_offset, 0, $comment_item);
+				$comment_offset++;
+			}
+
 			#use DDP; print np(%parts, colored => 1), "\n";#DEBUG
 			#use DDP; print np(%texts, colored => 1, seen_override => 1 ), "\n";#DEBUG
-			use DDP; print np(@compared, colored => 1, seen_override => 1 ), "\n";#DEBUG
+			#use DDP; print np(@compared, colored => 1, seen_override => 1 ), "\n";#DEBUG
 
 			return $_;
 		} else {
