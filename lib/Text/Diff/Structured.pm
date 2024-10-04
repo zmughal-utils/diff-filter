@@ -15,7 +15,7 @@ our @EXPORT_OK = qw(iter_input);
 use Iterator::Simple qw(iterator iter ienumerate imap list);
 use Iterator::Simple::Util qw(ibefore igroup);
 use List::Util qw(reduce any min max head);
-use List::UtilsBy qw(partition_by min_by sort_by);
+use List::UtilsBy qw(partition_by min_by nsort_by);
 use List::SomeUtils qw(before);
 use String::Tagged::Terminal;
 use Term::ANSIColor qw(colorstrip);
@@ -318,7 +318,7 @@ sub _iter_process_moved_diff($iter_ref_diff) {
 			for my $removed_item ($texts{removed}->@*) {
 				next unless $removed_item->[1]->@*;
 				my @matches =
-					sort_by { $_->[1] }
+					nsort_by { $_->[1] }
 					grep {
 						$_->[1] <= int( ($ENV{T} // 0.1) * max(0+$removed_item->[1]->@*, 0+$_->[0]->@*))
 						#&&
