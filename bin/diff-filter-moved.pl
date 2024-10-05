@@ -15,6 +15,7 @@ use Text::Diff::Structured qw(
     iter_input
 );
 use List::Util qw<max>;
+use utf8::all;
 
 my $iter = iter_input(\*STDIN);
 
