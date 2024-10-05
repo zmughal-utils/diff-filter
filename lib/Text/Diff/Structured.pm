@@ -401,8 +401,15 @@ sub _iter_process_moved_diff($iter_ref_diff) {
 					);
 
 					my $word_diff_tagged = String::Tagged::Terminal->parse_terminal($word_diff);
-					my @word_diff_format = (bgindex =>  0, fgindex => 8, bold  => 1 );
+					my %word_diff_format = (bgindex =>  0, fgindex => 8+7, bold  => 1 );
 
+					my $apply_tags = sub {
+						my $str = shift;
+						my $tags = pop;
+						while( my ($k,$v) = each %$tags ) {
+							$str->apply_tag(@_, $k, $v);
+						}
+					};
 					{
 						my $pos = 0;
 						while($pos < $word_diff_tagged->length) {
@@ -410,11 +417,12 @@ sub _iter_process_moved_diff($iter_ref_diff) {
 								$pos = $e->end + 1;
 							} else {
 								my $e = $word_diff_tagged->get_tag_missing_extent($pos, 'fgindex' );
-								$word_diff_tagged->apply_tag( $e, @word_diff_format );
+								$word_diff_tagged->$apply_tags( $e, \%word_diff_format );
 								$pos = $e->end + 1;
 							}
 						}
 					}
+					$word_diff_tagged->apply_tag( 0, $word_diff_tagged->length, %word_diff_format{bgindex} );
 
 					my $get_line = sub ($cmt_prefix) {
 						my $line = String::Tagged->join('',
@@ -422,7 +430,7 @@ sub _iter_process_moved_diff($iter_ref_diff) {
 							$distance != 0
 								? (":\n",
 										$cmt_prefix,
-										String::Tagged::Terminal->new_tagged("\t", @word_diff_format),
+										String::Tagged::Terminal->new_tagged("\t", %word_diff_format),
 										$word_diff_tagged)
 								: (': ', $unchanged_text)
 						);
