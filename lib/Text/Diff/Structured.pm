@@ -1,4 +1,5 @@
 package Text::Diff::Structured;
+# SPDX-License-Identifier: MIT
 # ABSTRACT:
 
 use strict;

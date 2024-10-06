@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# SPDX-License-Identifier: MIT
 # PODNAME:
 # ABSTRACT:
 
