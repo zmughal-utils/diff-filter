@@ -1,1 +1,9 @@
 lib
+
+\.git
+\.gitignore
+
+Makefile
+
+# Vim swap files
+\..*\.sw.?
