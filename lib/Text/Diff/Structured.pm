@@ -449,10 +449,7 @@ sub _iter_process_moved_diff($iter_ref_diff) {
 						->concat( $get_line->($cmt_to_prefix) );
 
 					map {
-						my $cmt_idx_tup = $_;
-
-						my $comment_idx  = $_->[0];
-						my $comment_text = $_->[1];
+						my ($comment_idx, $comment_text)  = $_->@*;
 
 						my $comment_item = {
 								text        => $comment_text,
