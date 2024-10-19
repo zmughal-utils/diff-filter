@@ -7,3 +7,5 @@ Makefile
 
 # Vim swap files
 \..*\.sw.?
+
+README\.md
