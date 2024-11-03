@@ -1,6 +1,6 @@
-lib
-corpus
-t
+^lib$
+^corpus$
+^t$
 
 \.git
 \.gitignore
